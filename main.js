@@ -46,8 +46,12 @@ function initFirebase() {
       console.warn('[SK Store] SDK de Firebase no cargado.');
       return false;
     }
-    firebase.initializeApp(FIREBASE_CONFIG);
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
     db = firebase.firestore();
+    // Evitar errores offline
+    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
     firebaseReady = true;
     console.log('[SK Store] Firebase conectado');
     return true;
@@ -180,8 +184,10 @@ async function getComments(gameId) {
   if (firebaseReady) {
     try {
       const snap = await db.collection('comments').doc(gameId).collection('items')
-        .orderBy('date', 'desc').limit(50).get();
-      return snap.docs.map(d => d.data());
+        .limit(50).get();
+      const list = snap.docs.map(d => d.data());
+      list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      return list;
     } catch (e) {
       console.warn('Firebase getComments:', e);
     }
@@ -210,8 +216,10 @@ async function addComment(gameId, author, text) {
 async function getBetaRequests() {
   if (firebaseReady) {
     try {
-      const snap = await db.collection('betaRequests').orderBy('date', 'desc').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const snap = await db.collection('betaRequests').get();
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      return list;
     } catch (e) {
       console.warn('Firebase getBetaRequests:', e);
     }
@@ -956,6 +964,7 @@ async function handleAuth() {
   const password = $('#auth-password').value;
   const email = $('#auth-email').value.trim();
   const err = $('#auth-error');
+  const btn = $('#btn-auth-submit');
 
   if (!password) {
     err.textContent = 'Escribe una contraseña';
@@ -964,6 +973,9 @@ async function handleAuth() {
   }
 
   const key = (username || '').toLowerCase();
+  if (btn) { btn.disabled = true; btn.textContent = 'Espera...'; }
+
+  try {
 
   // ===== ADMIN: se verifica por CORREO (3er campo) + CONTRASEÑA (2do campo) =====
   if (email && email.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
@@ -1047,6 +1059,16 @@ async function handleAuth() {
       isAdmin: false
     };
     finishLogin(`¡Hola, ${currentUser.username}!`);
+  }
+  } catch (e) {
+    console.error('Error en auth:', e);
+    err.textContent = 'Error de conexión. Intenta de nuevo.';
+    err.classList.remove('hidden');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = authMode === 'register' ? 'Registrarse' : 'Entrar';
+    }
   }
 }
 
