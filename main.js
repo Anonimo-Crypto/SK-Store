@@ -12,8 +12,8 @@
 // ============================================================
 // CONFIGURACIÓN - CAMBIA ESTOS DOS VALORES
 // ============================================================
-const GITHUB_USER = 'TU_USUARIO_DE_GITHUB';   // <-- pon tu usuario de GitHub
-const GITHUB_REPO = 'sk-store';                // <-- pon el nombre de tu repositorio
+const GITHUB_USER = 'Anonimo-Crypto';   // <-- pon tu usuario de GitHub
+const GITHUB_REPO = 'SK-Store';                // <-- pon el nombre de tu repositorio
 
 const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
 const MAX_BETA = 10;
