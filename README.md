@@ -10,3 +10,13 @@ Hecha en JavaScript puro y pensada para GitHub Pages.
 - Los datos de usuarios, comentarios y descargas se guardan en el navegador
 - Incluye modo oscuro (se recuerda la preferencia)
 - Compatible con PWA
+
+---
+
+# Desarrollador 
+Oscar Antonio Alvarez Collado
+
+---
+
+# Colaboradores
+Cristian Cuello
