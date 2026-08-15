@@ -12,8 +12,8 @@
 // ============================================================
 // CONFIGURACIÓN - CAMBIA ESTOS DOS VALORES
 // ============================================================
-const GITHUB_USER = 'Anonimo-Crypto';   // <-- pon tu usuario de GitHub
-const GITHUB_REPO = 'SK-Store';                // <-- pon el nombre de tu repositorio
+const GITHUB_USER = 'Anonimo-Crypto';
+const GITHUB_REPO = 'SK-Store';
 
 const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
 const MAX_BETA = 10;
@@ -163,31 +163,25 @@ function initTheme() {
 
 // ============== CARGAR JUEGOS (puro JS + GitHub API) ==============
 async function loadGames() {
-  // 1) Intentar con la API de GitHub (funciona en GitHub Pages)
-  if (GITHUB_USER && GITHUB_USER !== 'Anonimo-Crypto') {
+  // 1) API de GitHub (principal, para GitHub Pages y también en local si el repo es público)
+  if (GITHUB_USER) {
     try {
+      console.log('[SK Store] Cargando juegos desde GitHub:', GITHUB_USER + '/' + GITHUB_REPO);
       const games = await loadGamesFromGitHub();
       if (games.length > 0) {
         GAMES = games;
+        console.log('[SK Store] Juegos cargados:', games.map(g => g.name));
         renderGames();
         return;
       }
+      console.warn('[SK Store] La carpeta games/ está vacía o no tiene APKs');
     } catch (e) {
-      console.warn('GitHub API falló:', e.message);
+      console.warn('[SK Store] GitHub API falló:', e.message);
     }
   }
 
-  // 2) Fallback: games.json local (útil para pruebas)
-  try {
-    const res = await fetch('games.json?t=' + Date.now());
-    if (res.ok) {
-      GAMES = await res.json();
-      renderGames();
-      return;
-    }
-  } catch (_) {}
-
-  // 3) Fallback final: los ejemplos que ya están en la carpeta
+  // 2) Fallback local: ejemplos incluidos en el proyecto
+  console.log('[SK Store] Usando juegos de ejemplo locales');
   GAMES = [
     {
       id: 'Malakias',
@@ -214,7 +208,16 @@ async function loadGames() {
 async function loadGamesFromGitHub() {
   const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games`;
   const res = await fetch(api);
-  if (!res.ok) throw new Error('No se pudo listar la carpeta games/');
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    if (res.status === 404) {
+      throw new Error('Repo o carpeta games/ no encontrada. ¿Subiste los archivos a GitHub? ¿El repo es público?');
+    }
+    if (res.status === 403) {
+      throw new Error('API de GitHub limitó las peticiones. Espera un momento e intenta de nuevo.');
+    }
+    throw new Error('Error ' + res.status + ' al listar games/: ' + errBody.slice(0, 120));
+  }
 
   const items = await res.json();
   const folders = items.filter(i => i.type === 'dir');
