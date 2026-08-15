@@ -164,7 +164,7 @@ function initTheme() {
 // ============== CARGAR JUEGOS (puro JS + GitHub API) ==============
 async function loadGames() {
   // 1) Intentar con la API de GitHub (funciona en GitHub Pages)
-  if (GITHUB_USER && GITHUB_USER !== 'TU_USUARIO_DE_GITHUB') {
+  if (GITHUB_USER && GITHUB_USER !== 'Anonimo-Crypto') {
     try {
       const games = await loadGamesFromGitHub();
       if (games.length > 0) {
