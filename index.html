@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#01875f" />
+  <meta name="description" content="SK Store - Tienda de juegos independientes" />
+  <title>SK Store</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2301875f' width='100' height='100' rx='20'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>SK</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <button id="btn-back" class="icon-btn hidden" title="Volver">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      <div class="logo" id="logo-btn">
+        <span class="logo-icon">SK</span>
+        <span class="logo-text">Store</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <!-- SOLO visible para el administrador -->
+      <button id="btn-messages" class="icon-btn hidden" title="Mensajes">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>
+        <span id="msg-badge" class="badge hidden">0</span>
+      </button>
+      <div id="user-area">
+        <button id="btn-login" class="btn-login">Iniciar sesión</button>
+        <div id="user-info" class="user-info hidden">
+          <span id="user-name"></span>
+          <button id="btn-logout" class="icon-btn" title="Cerrar sesión">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Vista principal -->
+  <main id="view-home" class="view">
+    <div class="hero">
+      <h1>SK Store</h1>
+      <p>Juegos independientes hechos con pasión</p>
+    </div>
+    <div class="section-title">Todos los juegos</div>
+    <div id="games-grid" class="games-grid"></div>
+    <p id="no-games" class="empty-state hidden">
+      No hay juegos todavía.<br>
+      Sube una carpeta a <code>games/</code> con el .apk y el README.md<br>
+      y sube los cambios a GitHub. La página los detectará sola.
+    </p>
+  </main>
+
+  <!-- Vista de detalle / descarga -->
+  <main id="view-detail" class="view hidden">
+    <div class="detail-header">
+      <div class="detail-icon-wrap">
+        <div id="detail-icon" class="detail-icon"></div>
+      </div>
+      <div class="detail-info">
+        <h1 id="detail-title">Título</h1>
+        <p id="detail-dev">Desarrollador independiente</p>
+        <div class="detail-meta">
+          <span id="detail-downloads">0 descargas</span>
+          <span class="dot">•</span>
+          <span id="detail-size">-- MB</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-actions">
+      <button id="btn-install" class="btn-install">Instalar</button>
+      <button id="btn-share" class="btn-outline" title="Compartir enlace">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        Compartir
+      </button>
+    </div>
+
+    <div id="download-progress" class="download-progress hidden">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <span id="progress-text">0%</span>
+    </div>
+
+    <div class="detail-section">
+      <h2>Acerca de este juego</h2>
+      <div id="detail-description" class="description"></div>
+    </div>
+
+    <div class="detail-section">
+      <h2>Beta testers <span id="beta-count" class="badge-soft">0/10</span></h2>
+      <p class="beta-explain">
+        Un <strong>beta tester</strong> prueba versiones tempranas del juego y envía comentarios.
+        Si aportas cambios significativos, podrías ser incluido en los créditos del juego.
+        Máximo 10 beta testers por juego.
+      </p>
+      <div id="beta-area">
+        <button id="btn-beta-request" class="btn-outline">Solicitar ser beta tester</button>
+        <p id="beta-status" class="beta-status hidden"></p>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h2>Comentarios</h2>
+      <div id="comments-list" class="comments-list"></div>
+      <div id="comment-form" class="comment-form hidden">
+        <textarea id="comment-input" placeholder="Escribe un comentario..." rows="2"></textarea>
+        <button id="btn-comment" class="btn-small">Publicar</button>
+      </div>
+      <p id="comment-login-hint" class="hint">Inicia sesión para comentar</p>
+    </div>
+  </main>
+
+  <!-- Bandeja de mensajes — SOLO ADMIN -->
+  <main id="view-messages" class="view hidden">
+    <h2 class="section-title">Bandeja de mensajes</h2>
+    <div id="messages-list" class="messages-list"></div>
+  </main>
+
+  <!-- Modal login / registro -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <button id="btn-close-modal" class="btn-close">✕</button>
+      <h2 id="modal-title">Iniciar sesión</h2>
+
+      <div id="auth-form">
+        <div class="form-group">
+          <label for="auth-username">Nombre de usuario</label>
+          <input type="text" id="auth-username" placeholder="Tu nombre de usuario" maxlength="32" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="auth-password">Contraseña</label>
+          <input type="password" id="auth-password" placeholder="Tu contraseña" maxlength="64" autocomplete="current-password" />
+        </div>
+        <div class="form-group" id="email-group">
+          <label for="auth-email">Correo electrónico <span class="optional">(recomendado)</span></label>
+          <input type="email" id="auth-email" placeholder="tu@correo.com" autocomplete="email" />
+          <p class="field-hint">
+            <strong>Beneficio:</strong> Si dejas tu correo, el desarrollador podrá avisarte cuando te acepte o rechace como beta tester, y contactarte directamente. 
+            Nunca se pide la contraseña de tu correo.
+          </p>
+        </div>
+        <p id="auth-error" class="error hidden"></p>
+        <button id="btn-auth-submit" class="btn-install" style="width:100%">Entrar</button>
+        <p class="auth-switch">
+          <span id="switch-text">¿No tienes cuenta?</span>
+          <button id="btn-switch-mode" class="link-btn">Regístrate</button>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="main.js"></script>
+</body>
+</html>

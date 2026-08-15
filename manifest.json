@@ -1,0 +1,18 @@
+{
+  "name": "SK Store",
+  "short_name": "SK Store",
+  "description": "Tienda de juegos independientes hechos por desarrolladores independientes",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#01875f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2301875f' width='100' height='100' rx='20'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>SK</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
