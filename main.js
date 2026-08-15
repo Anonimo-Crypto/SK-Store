@@ -15,7 +15,7 @@
 const GITHUB_USER = 'Anonimo-Crypto';
 const GITHUB_REPO = 'SK-Store';
 
-const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
+const ADMIN_USERNAME = 'Oscar';
 const MAX_BETA = 10;
 
 // ============================================================
