@@ -12,8 +12,8 @@
 // ============================================================
 // CONFIGURACIÓN - CAMBIA ESTOS DOS VALORES
 // ============================================================
-const GITHUB_USER = 'Anonimo-Crypto';   // <-- pon tu usuario de GitHub
-const GITHUB_REPO = 'SK-Store';                // <-- pon el nombre de tu repositorio
+const GITHUB_USER = 'TU_USUARIO_DE_GITHUB';   // <-- pon tu usuario de GitHub
+const GITHUB_REPO = 'sk-store';                // <-- pon el nombre de tu repositorio
 
 const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
 const MAX_BETA = 10;
@@ -130,6 +130,37 @@ const COLORS = [
   '#009688', '#cddc39'
 ];
 
+
+// ============== TEMA (modo oscuro) ==============
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const sun = document.getElementById('icon-sun');
+  const moon = document.getElementById('icon-moon');
+  if (sun && moon) {
+    if (theme === 'dark') {
+      sun.classList.remove('hidden');
+      moon.classList.add('hidden');
+    } else {
+      sun.classList.add('hidden');
+      moon.classList.remove('hidden');
+    }
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem('skstore_theme', next);
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('skstore_theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  applyTheme(theme);
+}
+
 // ============== CARGAR JUEGOS (puro JS + GitHub API) ==============
 async function loadGames() {
   // 1) Intentar con la API de GitHub (funciona en GitHub Pages)
@@ -164,7 +195,8 @@ async function loadGames() {
       apk: 'Malakias.apk',
       size: 0,
       iconLetter: 'M',
-      color: COLORS[0]
+      color: COLORS[0],
+      coverUrl: 'games/Malakias/Portada.png'
     },
     {
       id: 'PixelRunner',
@@ -172,7 +204,8 @@ async function loadGames() {
       apk: 'PixelRunner.apk',
       size: 0,
       iconLetter: 'P',
-      color: COLORS[1]
+      color: COLORS[1],
+      coverUrl: 'games/PixelRunner/Portada.png'
     }
   ];
   renderGames();
@@ -196,6 +229,7 @@ async function loadGamesFromGitHub() {
     const files = await folderRes.json();
     const apk = files.find(f => f.name.toLowerCase().endsWith('.apk'));
     const readme = files.find(f => f.name.toLowerCase() === 'readme.md');
+    const cover = files.find(f => f.name.toLowerCase() === 'portada.png');
 
     if (!apk) continue; // sin APK no se muestra
 
@@ -219,9 +253,9 @@ async function loadGamesFromGitHub() {
       size: apk.size || 0,
       iconLetter: name[0].toUpperCase(),
       color: COLORS[i % COLORS.length],
-      // URLs directas de GitHub (raw)
       apkUrl: apk.download_url,
-      readmeUrl: readme ? readme.download_url : null
+      readmeUrl: readme ? readme.download_url : null,
+      coverUrl: cover ? cover.download_url : null
     });
   }
 
@@ -244,9 +278,13 @@ function renderGames() {
     const card = document.createElement('div');
     card.className = 'game-card';
     card.onclick = () => goDetail(g.id);
+
+    const coverSrc = g.coverUrl || `games/${g.id}/Portada.png`;
+    const iconHtml = `<img src="${coverSrc}" alt="${escapeHtml(g.name)}" onerror="this.style.display='none';this.parentElement.textContent='${g.iconLetter}'">`;
+
     card.innerHTML = `
       <div class="game-card-icon" style="background:linear-gradient(135deg,${g.color}22,${g.color}55);color:${g.color}">
-        ${g.iconLetter}
+        ${iconHtml}
       </div>
       <div class="game-card-body">
         <div class="game-card-title">${escapeHtml(g.name)}</div>
@@ -295,9 +333,11 @@ async function renderDetail(gameId) {
   }
 
   $('#detail-title').textContent = game.name;
-  $('#detail-icon').textContent = game.iconLetter;
-  $('#detail-icon').style.background = `linear-gradient(135deg,${game.color}22,${game.color}55)`;
-  $('#detail-icon').style.color = game.color;
+  const detailIcon = $('#detail-icon');
+  const coverSrc = game.coverUrl || `games/${game.id}/Portada.png`;
+  detailIcon.innerHTML = `<img src="${coverSrc}" alt="${escapeHtml(game.name)}" onerror="this.remove();this.parentElement.textContent='${game.iconLetter}'">`;
+  detailIcon.style.background = `linear-gradient(135deg,${game.color}22,${game.color}55)`;
+  detailIcon.style.color = game.color;
   $('#detail-downloads').textContent = `${getDownloads(gameId)} descarga${getDownloads(gameId) !== 1 ? 's' : ''}`;
   $('#detail-size').textContent = formatSize(game.size);
 
@@ -864,6 +904,7 @@ function submitComment() {
 
 // ============== INIT ==============
 async function init() {
+  initTheme();
   restoreSession();
   await loadGames();
 
@@ -886,6 +927,8 @@ async function init() {
   $('#btn-share').onclick = shareGame;
   $('#btn-comment').onclick = submitComment;
   $('#btn-messages').onclick = goMessages;
+  const themeBtn = document.getElementById('btn-theme');
+  if (themeBtn) themeBtn.onclick = toggleTheme;
 
   ['auth-username', 'auth-password', 'auth-email'].forEach(id => {
     const el = document.getElementById(id);
