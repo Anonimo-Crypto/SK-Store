@@ -13,10 +13,10 @@ Hecha en JavaScript puro y pensada para GitHub Pages.
 
 ---
 
-# Desarrollador 
+## Desarrollador 
 Oscar Antonio Alvarez Collado
 
 ---
 
-# Colaboradores
+## Colaboradores
 Cristian Cuello
