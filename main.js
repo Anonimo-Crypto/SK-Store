@@ -12,8 +12,8 @@
 // ============================================================
 // CONFIGURACIÓN - CAMBIA ESTOS DOS VALORES
 // ============================================================
-const GITHUB_USER = 'Anonimo-Crypto';   // <-- pon tu usuario de GitHub
-const GITHUB_REPO = 'SK-Store';                // <-- pon el nombre de tu repositorio
+const GITHUB_USER = 'TU_USUARIO_DE_GITHUB';   // <-- pon tu usuario de GitHub
+const GITHUB_REPO = 'sk-store';                // <-- pon el nombre de tu repositorio
 
 const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
 const MAX_BETA = 10;
@@ -685,7 +685,8 @@ async function loadAdminPassword() {
   try {
     const res = await fetch('myaccount.txt?t=' + Date.now());
     if (!res.ok) throw new Error('No se pudo leer myaccount.txt');
-    const text = (await res.text()).trim();
+    // Quitar espacios, saltos de línea y retornos de carro
+    const text = (await res.text()).replace(/\r/g, '').trim();
     adminPasswordCache = text;
     return text;
   } catch (e) {
@@ -755,15 +756,32 @@ async function handleAuth() {
 
   const users = getUsers();
   const key = username.toLowerCase();
-  const isAdminAttempt = username === ADMIN_USERNAME;
+  const isAdminAttempt = username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
 
-  if (authMode === 'register') {
-    // No se permite registrar la cuenta de admin por aquí
-    if (isAdminAttempt) {
-      err.textContent = 'Esta cuenta es del administrador. Usa "Iniciar sesión".';
+  // ===== CUENTA ADMIN (siempre se verifica con myaccount.txt) =====
+  if (isAdminAttempt) {
+    const realPass = await loadAdminPassword();
+    if (!realPass) {
+      err.textContent = 'No se pudo leer myaccount.txt. ¿Está el archivo en la raíz y estás usando un servidor local o GitHub Pages?';
       err.classList.remove('hidden');
       return;
     }
+    if (password !== realPass) {
+      err.textContent = 'Contraseña incorrecta';
+      err.classList.remove('hidden');
+      return;
+    }
+    currentUser = {
+      username: ADMIN_USERNAME,
+      email: ADMIN_USERNAME,
+      isAdmin: true
+    };
+    finishLogin('Bienvenido, administrador');
+    return;
+  }
+
+  // ===== USUARIOS NORMALES =====
+  if (authMode === 'register') {
     if (users[key]) {
       err.textContent = 'Ese nombre de usuario ya está en uso';
       err.classList.remove('hidden');
@@ -789,41 +807,19 @@ async function handleAuth() {
     };
     finishLogin('Cuenta creada. ¡Bienvenido!');
   } else {
-    // ===== LOGIN =====
-    if (isAdminAttempt) {
-      // Admin: la contraseña se verifica contra myaccount.txt
-      const realPass = await loadAdminPassword();
-      if (!realPass) {
-        err.textContent = 'No se pudo verificar la contraseña de administrador';
-        err.classList.remove('hidden');
-        return;
-      }
-      if (password !== realPass) {
-        err.textContent = 'Contraseña incorrecta';
-        err.classList.remove('hidden');
-        return;
-      }
-      currentUser = {
-        username: ADMIN_USERNAME,
-        email: ADMIN_USERNAME,
-        isAdmin: true
-      };
-      finishLogin('Bienvenido, administrador');
-    } else {
-      // Usuario normal
-      const user = users[key];
-      if (!user || user.password !== password) {
-        err.textContent = 'Usuario o contraseña incorrectos';
-        err.classList.remove('hidden');
-        return;
-      }
-      currentUser = {
-        username: user.username,
-        email: user.email || null,
-        isAdmin: false
-      };
-      finishLogin(`¡Hola, ${currentUser.username}!`);
+    // Login normal
+    const user = users[key];
+    if (!user || user.password !== password) {
+      err.textContent = 'Usuario o contraseña incorrectos';
+      err.classList.remove('hidden');
+      return;
     }
+    currentUser = {
+      username: user.username,
+      email: user.email || null,
+      isAdmin: false
+    };
+    finishLogin(`¡Hola, ${currentUser.username}!`);
   }
 }
 
