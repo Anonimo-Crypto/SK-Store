@@ -1089,3 +1089,85 @@ body {
   color: var(--text);
   font-weight: 500;
 }
+
+
+/* ========== Perfil ========== */
+.profile-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  max-width: 400px;
+  margin: 24px auto;
+}
+
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+
+.profile-email {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.profile-role {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ========== Consola ========== */
+.console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.console-header h2 {
+  font-size: 1.2rem;
+}
+
+.console-output {
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  border-radius: var(--radius);
+  padding: 12px;
+  min-height: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console-line {
+  margin-bottom: 4px;
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 4px;
+}
+
+.console-line .c-time {
+  color: #8b949e;
+  margin-right: 6px;
+}
+
+.console-line.log .c-level { color: #58a6ff; }
+.console-line.warn .c-level { color: #d29922; }
+.console-line.error .c-level { color: #f85149; }
+.console-line.info .c-level { color: #3fb950; }

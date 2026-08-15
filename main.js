@@ -79,6 +79,33 @@ let currentUser = null;   // { username, email?, isAdmin }
 let currentGameId = null;
 let currentTab = 'games'; // 'games' | 'apps' | 'users'
 let authMode = 'login';
+let appConsoleLogs = []; // mensajes capturados para la pestaña Consola
+const MAX_CONSOLE_LOGS = 200;
+
+(function captureConsole() {
+  ['log', 'warn', 'error', 'info'].forEach(level => {
+    const original = console[level].bind(console);
+    console[level] = (...args) => {
+      try {
+        const msg = args.map(a => {
+          if (a instanceof Error) return a.message + (a.stack ? '\n' + a.stack : '');
+          if (typeof a === 'object') {
+            try { return JSON.stringify(a); } catch (_) { return String(a); }
+          }
+          return String(a);
+        }).join(' ');
+        appConsoleLogs.push({ level, msg, time: new Date().toISOString() });
+        if (appConsoleLogs.length > MAX_CONSOLE_LOGS) appConsoleLogs.shift();
+        // Si la pestaña consola está abierta, refrescar
+        if (typeof currentTab !== 'undefined' && currentTab === 'console') {
+          try { renderConsole(); } catch (_) {}
+        }
+      } catch (_) {}
+      original(...args);
+    };
+  });
+})();
+
 
 // ============== STORAGE ==============
 const store = {
@@ -1166,18 +1193,21 @@ async function submitComment() {
 // ============== TABS & USUARIOS ==============
 function switchTab(tab) {
   currentTab = tab;
-  // Update nav active state
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
 
   if (tab === 'users') {
-    if (!currentUser || !currentUser.isAdmin) {
-      switchTab('games');
-      return;
-    }
+    if (!currentUser || !currentUser.isAdmin) { switchTab('games'); return; }
     showView('users');
     renderUsers();
+  } else if (tab === 'console') {
+    if (!currentUser || !currentUser.isAdmin) { switchTab('games'); return; }
+    showView('console');
+    renderConsole();
+  } else if (tab === 'profile') {
+    showView('profile');
+    renderProfile();
   } else {
     showView('home');
     renderGames();
@@ -1190,7 +1220,15 @@ async function renderUsers(filter = '') {
   if (!list) return;
 
   const users = await getUsers();
-  let entries = Object.values(users);
+  // Excluir al administrador de la lista
+  let entries = Object.values(users).filter(u => {
+    if (u.isAdmin) return false;
+    const em = (u.email || '').toLowerCase();
+    const un = (u.username || '').toLowerCase();
+    if (em === ADMIN_USERNAME.toLowerCase()) return false;
+    if (un === ADMIN_USERNAME.toLowerCase()) return false;
+    return true;
+  });
 
   if (filter) {
     const q = filter.toLowerCase();
@@ -1200,7 +1238,7 @@ async function renderUsers(filter = '') {
     );
   }
 
-  totalEl.textContent = `${Object.keys(users).length} usuario${Object.keys(users).length !== 1 ? 's' : ''} registrados (en este dispositivo)`;
+  totalEl.textContent = `${entries.length} usuario${entries.length !== 1 ? 's' : ''}`;
 
   if (entries.length === 0) {
     list.innerHTML = '<div class="empty-state">No hay usuarios para mostrar</div>';
@@ -1220,13 +1258,52 @@ async function renderUsers(filter = '') {
 
 function updateAdminTabs() {
   const tabUsers = $('#tab-users');
-  if (!tabUsers) return;
-  if (currentUser && currentUser.isAdmin) {
-    tabUsers.classList.remove('hidden');
-  } else {
-    tabUsers.classList.add('hidden');
-    if (currentTab === 'users') switchTab('games');
+  const tabConsole = $('#tab-console');
+  const isAdmin = currentUser && currentUser.isAdmin;
+  if (tabUsers) tabUsers.classList.toggle('hidden', !isAdmin);
+  if (tabConsole) tabConsole.classList.toggle('hidden', !isAdmin);
+  if (!isAdmin && (currentTab === 'users' || currentTab === 'console')) {
+    switchTab('games');
   }
+}
+
+function renderProfile() {
+  const avatar = $('#profile-avatar');
+  const name = $('#profile-name');
+  const email = $('#profile-email');
+  const role = $('#profile-role');
+  const btnOut = $('#btn-profile-logout');
+  const btnIn = $('#btn-profile-login');
+
+  if (currentUser) {
+    if (avatar) avatar.textContent = (currentUser.username || '?')[0].toUpperCase();
+    if (name) name.textContent = currentUser.username || '—';
+    if (email) email.textContent = currentUser.email || '';
+    if (role) role.textContent = currentUser.isAdmin ? 'Administrador' : 'Usuario';
+    if (btnOut) btnOut.classList.remove('hidden');
+    if (btnIn) btnIn.classList.add('hidden');
+  } else {
+    if (avatar) avatar.textContent = '?';
+    if (name) name.textContent = 'Sin sesión';
+    if (email) email.textContent = 'Inicia sesión para ver tu perfil';
+    if (role) role.textContent = '';
+    if (btnOut) btnOut.classList.add('hidden');
+    if (btnIn) btnIn.classList.remove('hidden');
+  }
+}
+
+function renderConsole() {
+  const out = $('#console-output');
+  if (!out) return;
+  if (!appConsoleLogs.length) {
+    out.innerHTML = '<div class="console-line log"><span class="c-time">—</span> Sin mensajes todavía</div>';
+    return;
+  }
+  out.innerHTML = appConsoleLogs.map(l => {
+    const t = (l.time || '').slice(11, 19);
+    return `<div class="console-line ${l.level}"><span class="c-time">${t}</span><span class="c-level">[${l.level}]</span> ${escapeHtml(l.msg)}</div>`;
+  }).join('');
+  out.scrollTop = out.scrollHeight;
 }
 
 // ============== INIT ==============
@@ -1261,6 +1338,12 @@ async function init() {
   if (usersSearch) {
     usersSearch.addEventListener('input', () => renderUsers(usersSearch.value.trim()));
   }
+  const btnProfOut = $('#btn-profile-logout');
+  if (btnProfOut) btnProfOut.onclick = () => { logout(); renderProfile(); };
+  const btnProfIn = $('#btn-profile-login');
+  if (btnProfIn) btnProfIn.onclick = openLoginModal;
+  const btnClearCon = $('#btn-clear-console');
+  if (btnClearCon) btnClearCon.onclick = () => { appConsoleLogs = []; renderConsole(); };
   $('#btn-share').onclick = shareGame;
   $('#btn-comment').onclick = submitComment;
   $('#btn-messages').onclick = goMessages;
