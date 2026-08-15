@@ -36,6 +36,15 @@ const FIREBASE_CONFIG = {
 let db = null; // Firestore
 let firebaseReady = false;
 
+
+/** Evita que Firebase deje la UI colgada */
+function withTimeout(promise, ms = 5000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]);
+}
+
 function initFirebase() {
   try {
     if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.includes('PEGA_AQUI')) {
@@ -102,30 +111,31 @@ async function getUsers() {
 
 async function saveUser(username, data) {
   const key = username.toLowerCase();
-  if (firebaseReady) {
-    try {
-      await db.collection('users').doc(key).set({
-        ...data,
-        username: data.username || username,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (e) {
-      console.warn('Firebase saveUser:', e);
-    }
-  }
+  // Local primero: el registro/login NUNCA se bloquea por la red
   const users = store.get('users', {});
   users[key] = { ...users[key], ...data, username: data.username || username };
   store.set('users', users);
+
+  // Firebase en segundo plano (no bloquea)
+  if (firebaseReady) {
+    db.collection('users').doc(key).set({
+      ...data,
+      username: data.username || username,
+      updatedAt: new Date().toISOString()
+    }, { merge: true }).catch(e => {
+      console.warn('Firebase saveUser (local OK):', e.message || e);
+    });
+  }
 }
 
 async function getUser(username) {
   const key = username.toLowerCase();
   if (firebaseReady) {
     try {
-      const doc = await db.collection('users').doc(key).get();
+      const doc = await withTimeout(db.collection('users').doc(key).get(), 2500);
       if (doc.exists) return doc.data();
     } catch (e) {
-      console.warn('Firebase getUser:', e);
+      console.warn('Firebase getUser (usando local):', e.message || e);
     }
   }
   const users = store.get('users', {});
@@ -497,9 +507,7 @@ function renderGames() {
   const title = $('#home-title');
   const sub = $('#home-subtitle');
   if (title) title.textContent = currentTab === 'apps' ? 'Apps' : 'Juegos';
-  if (sub) sub.textContent = currentTab === 'apps'
-    ? 'Aplicaciones independientes'
-    : 'Juegos independientes hechos con pasión';
+  if (sub) sub.textContent = '';
 
   if (list.length === 0) {
     empty.classList.remove('hidden');
