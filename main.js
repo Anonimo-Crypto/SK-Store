@@ -349,7 +349,12 @@ async function renderDetail(gameId) {
   try {
     const res = await fetch(readmeUrl);
     if (res.ok) {
-      descEl.innerHTML = simpleMarkdown(await res.text());
+      if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+        descEl.innerHTML = marked.parse(await res.text());
+      } else {
+        descEl.innerHTML = simpleMarkdown(await res.text());
+      }
     } else {
       descEl.textContent = 'Sin descripción disponible.';
     }

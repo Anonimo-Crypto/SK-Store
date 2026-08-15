@@ -17,17 +17,6 @@ Hecha en JavaScript puro y pensada para GitHub Pages.
 
 ---
 
-## Configuración inicial
-
-Abre `main.js` y configura tu repositorio:
-
-```js
-const GITHUB_USER = 'tu_usuario';
-const GITHUB_REPO = 'nombre-del-repo';
-```
-
----
-
 ## Estructura
 
 ```
