@@ -370,7 +370,7 @@ async function renderDetail(gameId) {
   $('#progress-fill').style.width = '0%';
   $('#progress-text').textContent = '0%';
   $('#btn-install').disabled = false;
-  $('#btn-install').textContent = 'Instalar';
+  $('#btn-install').textContent = 'Descargar';
 
   // Beta
   const accepted = getAcceptedBetas(gameId);
@@ -434,69 +434,49 @@ function renderComments(gameId) {
 
 // ============== DESCARGA ==============
 function startDownload() {
-  if (!currentGameId || isDownloading) return;
+  if (!currentGameId) return;
   const game = GAMES.find(g => g.id === currentGameId);
   if (!game) return;
 
-  isDownloading = true;
   const btn = $('#btn-install');
-  btn.disabled = true;
-  btn.textContent = 'Descargando...';
-
   const progressWrap = $('#download-progress');
-  progressWrap.classList.remove('hidden');
   const fill = $('#progress-fill');
   const text = $('#progress-text');
 
-  let progress = 0;
-  const interval = setInterval(() => {
-    progress += Math.random() * 14 + 4;
-    if (progress > 92) progress = 92;
-    fill.style.width = progress + '%';
-    text.textContent = Math.floor(progress) + '%';
-  }, 160);
+  // Ruta relativa (mismo origen en GitHub Pages) → el navegador muestra su diálogo nativo
+  // Si falla (pruebas locales raras), se usa la URL raw de GitHub como respaldo
+  const url = `games/${game.id}/${game.apk}`;
 
-  // Preferir la URL raw de GitHub si existe, si no la ruta local
-  const url = game.apkUrl || `games/${game.id}/${game.apk}`;
+  // Descarga nativa del navegador (como cualquier página normal)
+  // Esto muestra el diálogo del navegador y la barra de descarga del sistema
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = game.apk; // sugiere el nombre del archivo
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 
-  fetch(url)
-    .then(res => {
-      if (!res.ok) throw new Error('No se pudo descargar el APK');
-      return res.blob();
-    })
-    .then(blob => {
-      clearInterval(interval);
-      fill.style.width = '100%';
-      text.textContent = '100%';
+  // Contar descarga
+  incDownloads(game.id);
+  $('#detail-downloads').textContent = `${getDownloads(game.id)} descargas`;
 
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = game.apk;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(a.href);
+  // Feedback visual breve (el progreso real lo muestra el navegador)
+  btn.textContent = 'Descarga iniciada';
+  btn.disabled = true;
+  progressWrap.classList.remove('hidden');
+  fill.style.width = '100%';
+  text.textContent = '✓';
 
-      incDownloads(game.id);
-      $('#detail-downloads').textContent = `${getDownloads(game.id)} descargas`;
+  showToast('Si el navegador lo pide, acepta la descarga');
 
-      btn.textContent = 'Instalado ✓';
-      showToast('Descarga completada');
-      setTimeout(() => {
-        isDownloading = false;
-        btn.disabled = false;
-        btn.textContent = 'Instalar de nuevo';
-      }, 1400);
-    })
-    .catch(err => {
-      clearInterval(interval);
-      console.error(err);
-      showToast('Error al descargar el APK');
-      btn.disabled = false;
-      btn.textContent = 'Instalar';
-      progressWrap.classList.add('hidden');
-      isDownloading = false;
-    });
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = 'Descargar de nuevo';
+    progressWrap.classList.add('hidden');
+    fill.style.width = '0%';
+    text.textContent = '0%';
+  }, 2500);
 }
 
 // ============== COMPARTIR ==============
