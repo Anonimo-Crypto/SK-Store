@@ -20,11 +20,51 @@ const ADMIN_PASSWORD = 'TLOZBOTW';
 const MAX_BETA = 10;
 
 // ============================================================
+// FIREBASE - pega aquí la config de tu proyecto
+// Firebase Console → Project settings → Your apps → SDK setup
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA7SvgYiXGOiYG8lWfUKoCRG6OGku7KOXU",
+  authDomain: "sk-store-1e990.firebaseapp.com",
+  projectId: "sk-store-1e990",
+  storageBucket: "sk-store-1e990.firebasestorage.app",
+  messagingSenderId: "10255653834",
+  appId: "1:10255653834:web:7ffcf90fce8bf4814b4d33",
+  measurementId: "G-77P3LYL1LB"
+};
 
-let GAMES = [];
+let db = null; // Firestore
+let firebaseReady = false;
+
+function initFirebase() {
+  try {
+    if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.includes('PEGA_AQUI')) {
+      console.warn('[SK Store] Firebase no configurado. Usando datos locales.');
+      return false;
+    }
+    if (typeof firebase === 'undefined') {
+      console.warn('[SK Store] SDK de Firebase no cargado.');
+      return false;
+    }
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    firebaseReady = true;
+    console.log('[SK Store] Firebase conectado');
+    return true;
+  } catch (e) {
+    console.error('[SK Store] Error Firebase:', e);
+    firebaseReady = false;
+    return false;
+  }
+}
+
+// ============================================================
+
+let GAMES = [];      // juegos
+let APPS = [];       // apps
 let currentUser = null;   // { username, email?, isAdmin }
 let currentGameId = null;
-let isDownloading = false;
+let currentTab = 'games'; // 'games' | 'apps' | 'users'
 let authMode = 'login';
 
 // ============== STORAGE ==============
@@ -40,45 +80,192 @@ const store = {
   }
 };
 
-function getUsers() { return store.get('users', {}); }
-function saveUsers(u) { store.set('users', u); }
-
-function getDownloads(gameId) {
-  const all = store.get('downloads', {});
-  return all[gameId] || 0;
+// ---------- USUARIOS ----------
+async function getUsers() {
+  if (firebaseReady) {
+    try {
+      const snap = await db.collection('users').get();
+      const users = {};
+      snap.forEach(doc => { users[doc.id] = doc.data(); });
+      store.set('users', users); // cache
+      return users;
+    } catch (e) {
+      console.warn('Firebase getUsers:', e);
+    }
+  }
+  return store.get('users', {});
 }
-function incDownloads(gameId) {
+
+async function saveUser(username, data) {
+  const key = username.toLowerCase();
+  if (firebaseReady) {
+    try {
+      await db.collection('users').doc(key).set({
+        ...data,
+        username: data.username || username,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Firebase saveUser:', e);
+    }
+  }
+  const users = store.get('users', {});
+  users[key] = { ...users[key], ...data, username: data.username || username };
+  store.set('users', users);
+}
+
+async function getUser(username) {
+  const key = username.toLowerCase();
+  if (firebaseReady) {
+    try {
+      const doc = await db.collection('users').doc(key).get();
+      if (doc.exists) return doc.data();
+    } catch (e) {
+      console.warn('Firebase getUser:', e);
+    }
+  }
+  const users = store.get('users', {});
+  return users[key] || null;
+}
+
+// ---------- DESCARGAS (globales) ----------
+function getDownloadsCached(itemId) {
   const all = store.get('downloads', {});
-  all[gameId] = (all[gameId] || 0) + 1;
+  return all[itemId] || 0;
+}
+
+async function getDownloads(itemId) {
+  if (firebaseReady) {
+    try {
+      const doc = await db.collection('downloads').doc(itemId).get();
+      const count = doc.exists ? (doc.data().count || 0) : 0;
+      const all = store.get('downloads', {});
+      all[itemId] = count;
+      store.set('downloads', all);
+      return count;
+    } catch (e) {
+      console.warn('Firebase getDownloads:', e);
+    }
+  }
+  return getDownloadsCached(itemId);
+}
+
+async function incDownloads(itemId) {
+  if (firebaseReady) {
+    try {
+      const ref = db.collection('downloads').doc(itemId);
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(ref);
+        const current = doc.exists ? (doc.data().count || 0) : 0;
+        tx.set(ref, { count: current + 1, updatedAt: new Date().toISOString() }, { merge: true });
+      });
+      const doc = await ref.get();
+      const count = doc.exists ? (doc.data().count || 0) : 0;
+      const all = store.get('downloads', {});
+      all[itemId] = count;
+      store.set('downloads', all);
+      return count;
+    } catch (e) {
+      console.warn('Firebase incDownloads:', e);
+    }
+  }
+  const all = store.get('downloads', {});
+  all[itemId] = (all[itemId] || 0) + 1;
   store.set('downloads', all);
+  return all[itemId];
 }
 
-function getComments(gameId) {
+// ---------- COMENTARIOS ----------
+async function getComments(gameId) {
+  if (firebaseReady) {
+    try {
+      const snap = await db.collection('comments').doc(gameId).collection('items')
+        .orderBy('date', 'desc').limit(50).get();
+      return snap.docs.map(d => d.data());
+    } catch (e) {
+      console.warn('Firebase getComments:', e);
+    }
+  }
   const all = store.get('comments', {});
   return all[gameId] || [];
 }
-function addComment(gameId, author, text) {
+
+async function addComment(gameId, author, text) {
+  const comment = { author, text, date: new Date().toISOString() };
+  if (firebaseReady) {
+    try {
+      await db.collection('comments').doc(gameId).collection('items').add(comment);
+      return;
+    } catch (e) {
+      console.warn('Firebase addComment:', e);
+    }
+  }
   const all = store.get('comments', {});
   if (!all[gameId]) all[gameId] = [];
-  all[gameId].unshift({ author, text, date: new Date().toISOString() });
+  all[gameId].unshift(comment);
   store.set('comments', all);
 }
 
-function getBetaRequests() { return store.get('betaRequests', []); }
-function saveBetaRequests(list) { store.set('betaRequests', list); }
-function getAcceptedBetas(gameId) {
-  return getBetaRequests().filter(r => r.gameId === gameId && r.status === 'accepted');
+// ---------- BETA REQUESTS ----------
+async function getBetaRequests() {
+  if (firebaseReady) {
+    try {
+      const snap = await db.collection('betaRequests').orderBy('date', 'desc').get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn('Firebase getBetaRequests:', e);
+    }
+  }
+  return store.get('betaRequests', []);
 }
 
-function addUserMessage(username, msg) {
+async function saveBetaRequest(req) {
+  if (firebaseReady) {
+    try {
+      if (req.id) {
+        const { id, ...data } = req;
+        await db.collection('betaRequests').doc(id).set(data, { merge: true });
+      } else {
+        const ref = await db.collection('betaRequests').add(req);
+        req.id = ref.id;
+      }
+      return req;
+    } catch (e) {
+      console.warn('Firebase saveBetaRequest:', e);
+    }
+  }
+  const list = store.get('betaRequests', []);
+  const idx = list.findIndex(r => r.id === req.id);
+  if (idx >= 0) list[idx] = req;
+  else list.push(req);
+  store.set('betaRequests', list);
+  return req;
+}
+
+async function getAcceptedBetas(gameId) {
+  const list = await getBetaRequests();
+  return list.filter(r => r.gameId === gameId && r.status === 'accepted');
+}
+
+async function addUserMessage(username, msg) {
+  const entry = { ...msg, date: new Date().toISOString(), read: false };
+  if (firebaseReady) {
+    try {
+      await db.collection('userMessages').doc(username).collection('items').add(entry);
+      return;
+    } catch (e) {
+      console.warn('Firebase addUserMessage:', e);
+    }
+  }
   const all = store.get('userMessages', {});
   if (!all[username]) all[username] = [];
-  all[username].unshift({ ...msg, date: new Date().toISOString(), read: false });
+  all[username].unshift(entry);
   store.set('userMessages', all);
 }
 
-function getUnreadAdminCount() {
-  return getBetaRequests().filter(r => r.status === 'pending').length;
+async function getUnreadAdminCount() {
+  const list = await getBetaRequests();
+  return list.filter(r => r.status === 'pending').length;
 }
 
 // ============== HELPERS ==============
@@ -163,25 +350,30 @@ function initTheme() {
 
 // ============== CARGAR JUEGOS (puro JS + GitHub API) ==============
 async function loadGames() {
-  // 1) API de GitHub (principal, para GitHub Pages y también en local si el repo es público)
+  GAMES = [];
+  APPS = [];
+
   if (GITHUB_USER) {
     try {
-      console.log('[SK Store] Cargando juegos desde GitHub:', GITHUB_USER + '/' + GITHUB_REPO);
-      const games = await loadGamesFromGitHub();
-      if (games.length > 0) {
-        GAMES = games;
-        console.log('[SK Store] Juegos cargados:', games.map(g => g.name));
-        renderGames();
-        return;
-      }
-      console.warn('[SK Store] La carpeta games/ está vacía o no tiene APKs');
+      console.log('[SK Store] Cargando desde GitHub:', GITHUB_USER + '/' + GITHUB_REPO);
+      const [games, apps] = await Promise.all([
+        loadFolderFromGitHub('games'),
+        loadFolderFromGitHub('apps')
+      ]);
+      GAMES = games;
+      APPS = apps;
+      console.log('[SK Store] Juegos:', GAMES.length, 'Apps:', APPS.length);
+      renderGames();
+      // Prefetch download counts
+      [...GAMES, ...APPS].forEach(g => getDownloads(g.id));
+      return;
     } catch (e) {
       console.warn('[SK Store] GitHub API falló:', e.message);
     }
   }
 
-  // 2) Fallback local: ejemplos incluidos en el proyecto
-  console.log('[SK Store] Usando juegos de ejemplo locales');
+  // Fallback local de ejemplo
+  console.log('[SK Store] Usando ejemplos locales');
   GAMES = [
     {
       id: 'Malakias',
@@ -190,7 +382,9 @@ async function loadGames() {
       size: 0,
       iconLetter: 'M',
       color: COLORS[0],
-      coverUrl: 'games/Malakias/Portada.png'
+      coverUrl: 'games/Malakias/Portada.png',
+      folder: 'games',
+      developer: 'Desarrollador independiente'
     },
     {
       id: 'PixelRunner',
@@ -199,45 +393,47 @@ async function loadGames() {
       size: 0,
       iconLetter: 'P',
       color: COLORS[1],
-      coverUrl: 'games/PixelRunner/Portada.png'
+      coverUrl: 'games/PixelRunner/Portada.png',
+      folder: 'games',
+      developer: 'Desarrollador independiente'
     }
   ];
+  APPS = [];
   renderGames();
 }
 
-async function loadGamesFromGitHub() {
-  const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games`;
+async function loadFolderFromGitHub(folderName) {
+  const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${folderName}`;
   const res = await fetch(api);
   if (!res.ok) {
+    if (res.status === 404) return []; // carpeta vacía o inexistente
     const errBody = await res.text().catch(() => '');
-    if (res.status === 404) {
-      throw new Error('Repo o carpeta games/ no encontrada. ¿Subiste los archivos a GitHub? ¿El repo es público?');
-    }
     if (res.status === 403) {
-      throw new Error('API de GitHub limitó las peticiones. Espera un momento e intenta de nuevo.');
+      throw new Error('API de GitHub limitó las peticiones. Espera un momento.');
     }
-    throw new Error('Error ' + res.status + ' al listar games/: ' + errBody.slice(0, 120));
+    throw new Error('Error ' + res.status + ' al listar ' + folderName);
   }
 
   const items = await res.json();
+  if (!Array.isArray(items)) return [];
   const folders = items.filter(i => i.type === 'dir');
-
-  const games = [];
+  const list = [];
 
   for (let i = 0; i < folders.length; i++) {
     const folder = folders[i];
     const folderRes = await fetch(folder.url);
     if (!folderRes.ok) continue;
-
     const files = await folderRes.json();
     const apk = files.find(f => f.name.toLowerCase().endsWith('.apk'));
     const readme = files.find(f => f.name.toLowerCase() === 'readme.md');
     const cover = files.find(f => f.name.toLowerCase() === 'portada.png');
+    const devFile = files.find(f => f.name.toLowerCase() === 'developer.txt');
 
-    if (!apk) continue; // sin APK no se muestra
+    if (!apk) continue;
 
     let name = folder.name;
-    // Intentar sacar el título del README
+    let developer = 'Desarrollador independiente';
+
     if (readme && readme.download_url) {
       try {
         const mdRes = await fetch(readme.download_url);
@@ -249,7 +445,14 @@ async function loadGamesFromGitHub() {
       } catch (_) {}
     }
 
-    games.push({
+    if (devFile && devFile.download_url) {
+      try {
+        const dRes = await fetch(devFile.download_url);
+        if (dRes.ok) developer = (await dRes.text()).trim() || developer;
+      } catch (_) {}
+    }
+
+    list.push({
       id: folder.name,
       name: name,
       apk: apk.name,
@@ -258,31 +461,52 @@ async function loadGamesFromGitHub() {
       color: COLORS[i % COLORS.length],
       apkUrl: apk.download_url,
       readmeUrl: readme ? readme.download_url : null,
-      coverUrl: cover ? cover.download_url : null
+      coverUrl: cover ? cover.download_url : null,
+      folder: folderName,
+      developer: developer
     });
   }
+  return list;
+}
 
-  return games;
+function getCurrentList() {
+  return currentTab === 'apps' ? APPS : GAMES;
+}
+
+function findItem(id) {
+  return GAMES.find(g => g.id === id) || APPS.find(g => g.id === id);
 }
 
 function renderGames() {
   const grid = $('#games-grid');
   const empty = $('#no-games');
+  if (!grid) return;
   grid.innerHTML = '';
 
-  if (GAMES.length === 0) {
+  const list = getCurrentList();
+
+  // Títulos
+  const title = $('#home-title');
+  const sub = $('#home-subtitle');
+  if (title) title.textContent = currentTab === 'apps' ? 'Apps' : 'Juegos';
+  if (sub) sub.textContent = currentTab === 'apps'
+    ? 'Aplicaciones independientes'
+    : 'Juegos independientes hechos con pasión';
+
+  if (list.length === 0) {
     empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
 
-  GAMES.forEach(g => {
-    const downloads = getDownloads(g.id);
+  list.forEach(g => {
+    const downloads = getDownloadsCached(g.id);
     const card = document.createElement('div');
     card.className = 'game-card';
     card.onclick = () => goDetail(g.id);
 
-    const coverSrc = g.coverUrl || `games/${g.id}/Portada.png`;
+    const folder = g.folder || (currentTab === 'apps' ? 'apps' : 'games');
+    const coverSrc = g.coverUrl || `${folder}/${g.id}/Portada.png`;
     const iconHtml = `<img src="${coverSrc}" alt="${escapeHtml(g.name)}" onerror="this.style.display='none';this.parentElement.textContent='${g.iconLetter}'">`;
 
     card.innerHTML = `
@@ -291,10 +515,16 @@ function renderGames() {
       </div>
       <div class="game-card-body">
         <div class="game-card-title">${escapeHtml(g.name)}</div>
-        <div class="game-card-meta">${downloads} descarga${downloads !== 1 ? 's' : ''}</div>
+        <div class="game-card-meta" data-dl-id="${g.id}">${downloads} descarga${downloads !== 1 ? 's' : ''}</div>
       </div>
     `;
     grid.appendChild(card);
+
+    // Actualizar contador global en segundo plano
+    getDownloads(g.id).then(n => {
+      const el = card.querySelector(`[data-dl-id="${g.id}"]`);
+      if (el) el.textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
+    });
   });
 }
 
@@ -309,8 +539,14 @@ function showView(name) {
 function goHome() {
   currentGameId = null;
   history.replaceState(null, '', location.pathname);
-  showView('home');
-  renderGames();
+  if (currentTab === 'users' && currentUser && currentUser.isAdmin) {
+    showView('users');
+    renderUsers();
+  } else {
+    if (currentTab === 'users') currentTab = 'games';
+    showView('home');
+    renderGames();
+  }
 }
 
 function goDetail(gameId) {
@@ -328,27 +564,33 @@ function goMessages() {
 
 // ============== DETALLE ==============
 async function renderDetail(gameId) {
-  const game = GAMES.find(g => g.id === gameId);
+  const game = findItem(gameId);
   if (!game) {
-    showToast('Juego no encontrado');
+    showToast('No encontrado');
     goHome();
     return;
   }
 
   $('#detail-title').textContent = game.name;
   const detailIcon = $('#detail-icon');
-  const coverSrc = game.coverUrl || `games/${game.id}/Portada.png`;
+  const coverSrc = game.coverUrl || `${game.folder || 'games'}/${game.id}/Portada.png`;
   detailIcon.innerHTML = `<img src="${coverSrc}" alt="${escapeHtml(game.name)}" onerror="this.remove();this.parentElement.textContent='${game.iconLetter}'">`;
   detailIcon.style.background = `linear-gradient(135deg,${game.color}22,${game.color}55)`;
   detailIcon.style.color = game.color;
-  $('#detail-downloads').textContent = `${getDownloads(gameId)} descarga${getDownloads(gameId) !== 1 ? 's' : ''}`;
+  const cachedDl = getDownloadsCached(gameId);
+  $('#detail-downloads').textContent = `${cachedDl} descarga${cachedDl !== 1 ? 's' : ''}`;
+  getDownloads(gameId).then(n => {
+    $('#detail-downloads').textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
+  });
+  const devEl = $('#detail-developer');
+  if (devEl) devEl.textContent = game.developer || '—';
   $('#detail-size').textContent = formatSize(game.size);
 
   // Descripción
   const descEl = $('#detail-description');
   descEl.innerHTML = '<em>Cargando descripción...</em>';
 
-  const readmeUrl = game.readmeUrl || `games/${game.id}/README.md`;
+  const readmeUrl = game.readmeUrl || `${game.folder || 'games'}/${game.id}/README.md`;
   try {
     const res = await fetch(readmeUrl);
     if (res.ok) {
@@ -373,7 +615,7 @@ async function renderDetail(gameId) {
   $('#btn-install').textContent = 'Descargar';
 
   // Beta
-  const accepted = getAcceptedBetas(gameId);
+  const accepted = await getAcceptedBetas(gameId);
   $('#beta-count').textContent = `${accepted.length}/${MAX_BETA}`;
 
   const betaBtn = $('#btn-beta-request');
@@ -386,7 +628,8 @@ async function renderDetail(gameId) {
     betaBtn.textContent = 'Inicia sesión para solicitar';
     betaBtn.onclick = openLoginModal;
   } else {
-    const myReq = getBetaRequests().find(
+    const allReqs = await getBetaRequests();
+    const myReq = allReqs.find(
       r => r.gameId === gameId && r.username.toLowerCase() === currentUser.username.toLowerCase()
     );
     if (myReq) {
@@ -404,7 +647,7 @@ async function renderDetail(gameId) {
     }
   }
 
-  renderComments(gameId);
+  await renderComments(gameId);
   if (currentUser) {
     $('#comment-form').classList.remove('hidden');
     $('#comment-login-hint').classList.add('hidden');
@@ -414,9 +657,9 @@ async function renderDetail(gameId) {
   }
 }
 
-function renderComments(gameId) {
+async function renderComments(gameId) {
   const list = $('#comments-list');
-  const comments = getComments(gameId);
+  const comments = await getComments(gameId);
   if (!comments.length) {
     list.innerHTML = '<p class="hint">Sé el primero en comentar</p>';
     return;
@@ -435,7 +678,7 @@ function renderComments(gameId) {
 // ============== DESCARGA ==============
 function startDownload() {
   if (!currentGameId) return;
-  const game = GAMES.find(g => g.id === currentGameId);
+  const game = findItem(currentGameId);
   if (!game) return;
 
   const btn = $('#btn-install');
@@ -445,7 +688,8 @@ function startDownload() {
 
   // Ruta relativa (mismo origen en GitHub Pages) → el navegador muestra su diálogo nativo
   // Si falla (pruebas locales raras), se usa la URL raw de GitHub como respaldo
-  const url = `games/${game.id}/${game.apk}`;
+  const folder = game.folder || 'games';
+  const url = `${folder}/${game.id}/${game.apk}`;
 
   // Descarga nativa del navegador (como cualquier página normal)
   // Esto muestra el diálogo del navegador y la barra de descarga del sistema
@@ -457,26 +701,22 @@ function startDownload() {
   a.click();
   a.remove();
 
-  // Contar descarga
-  incDownloads(game.id);
-  $('#detail-downloads').textContent = `${getDownloads(game.id)} descargas`;
-
-  // Feedback visual breve (el progreso real lo muestra el navegador)
-  btn.textContent = 'Descarga iniciada';
+  // Contar descarga (global)
+  btn.textContent = 'Iniciando...';
   btn.disabled = true;
-  progressWrap.classList.remove('hidden');
-  fill.style.width = '100%';
-  text.textContent = '✓';
+  incDownloads(game.id).then(n => {
+    $('#detail-downloads').textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
+  });
 
   showToast('Si el navegador lo pide, acepta la descarga');
+
+  // No mostramos barra falsa: el progreso real lo lleva el navegador
+  progressWrap.classList.add('hidden');
 
   setTimeout(() => {
     btn.disabled = false;
     btn.textContent = 'Descargar de nuevo';
-    progressWrap.classList.add('hidden');
-    fill.style.width = '0%';
-    text.textContent = '0%';
-  }, 2500);
+  }, 1500);
 }
 
 // ============== COMPARTIR ==============
@@ -497,15 +737,16 @@ function copyShare(url) {
 }
 
 // ============== BETA ==============
-function requestBeta(gameId) {
+async function requestBeta(gameId) {
   if (!currentUser) { openLoginModal(); return; }
 
-  const accepted = getAcceptedBetas(gameId);
+  const accepted = await getAcceptedBetas(gameId);
   if (accepted.length >= MAX_BETA) {
     showToast('Cupo de beta testers lleno');
     return;
   }
-  const exists = getBetaRequests().find(
+  const allReqs = await getBetaRequests();
+  const exists = allReqs.find(
     r => r.gameId === gameId && r.username.toLowerCase() === currentUser.username.toLowerCase()
   );
   if (exists) {
@@ -513,8 +754,7 @@ function requestBeta(gameId) {
     return;
   }
 
-  const list = getBetaRequests();
-  list.push({
+  await saveBetaRequest({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     gameId,
     username: currentUser.username,
@@ -522,7 +762,6 @@ function requestBeta(gameId) {
     status: 'pending',
     date: new Date().toISOString()
   });
-  saveBetaRequests(list);
 
   showToast('Solicitud enviada. El desarrollador la revisará.');
   renderDetail(gameId);
@@ -530,13 +769,13 @@ function requestBeta(gameId) {
 }
 
 // ============== MENSAJES (SOLO ADMIN) ==============
-function updateMessagesBadge() {
+async function updateMessagesBadge() {
   const btn = $('#btn-messages');
   const badge = $('#msg-badge');
 
   if (currentUser && currentUser.isAdmin) {
     btn.classList.remove('hidden');
-    const count = getUnreadAdminCount();
+    const count = await getUnreadAdminCount();
     if (count > 0) {
       badge.textContent = count > 9 ? '9+' : count;
       badge.classList.remove('hidden');
@@ -549,14 +788,15 @@ function updateMessagesBadge() {
   }
 }
 
-function renderMessages() {
+async function renderMessages() {
   if (!currentUser || !currentUser.isAdmin) {
     goHome();
     return;
   }
 
   const list = $('#messages-list');
-  const pending = getBetaRequests().filter(r => r.status === 'pending');
+  const allReqs = await getBetaRequests();
+  const pending = allReqs.filter(r => r.status === 'pending');
 
   if (!pending.length) {
     list.innerHTML = '<div class="empty-state">No hay solicitudes pendientes</div>';
@@ -564,7 +804,7 @@ function renderMessages() {
   }
 
   list.innerHTML = pending.map(r => {
-    const game = GAMES.find(g => g.id === r.gameId);
+    const game = findItem(r.gameId);
     // Mostrar claramente el correo para que el admin pueda escribirle
     const emailBlock = r.email
       ? `<div style="margin-top:6px">
@@ -591,22 +831,23 @@ function renderMessages() {
   }).join('');
 }
 
-function acceptBeta(reqId) {
+async function acceptBeta(reqId) {
   if (!currentUser || !currentUser.isAdmin) return;
 
-  const list = getBetaRequests();
+  const list = await getBetaRequests();
   const req = list.find(r => r.id === reqId);
   if (!req) return;
 
-  if (getAcceptedBetas(req.gameId).length >= MAX_BETA) {
+  const accepted = await getAcceptedBetas(req.gameId);
+  if (accepted.length >= MAX_BETA) {
     showToast('Ya hay 10 beta testers en este juego');
     return;
   }
 
   req.status = 'accepted';
-  saveBetaRequests(list);
+  await saveBetaRequest(req);
 
-  addUserMessage(req.username, {
+  await addUserMessage(req.username, {
     type: 'beta_accepted',
     gameId: req.gameId,
     text: `¡Felicidades! Has sido aceptado como beta tester de «${req.gameId}».`
@@ -628,17 +869,17 @@ function acceptBeta(reqId) {
   updateMessagesBadge();
 }
 
-function rejectBeta(reqId) {
+async function rejectBeta(reqId) {
   if (!currentUser || !currentUser.isAdmin) return;
 
-  const list = getBetaRequests();
+  const list = await getBetaRequests();
   const req = list.find(r => r.id === reqId);
   if (!req) return;
 
   req.status = 'rejected';
-  saveBetaRequests(list);
+  await saveBetaRequest(req);
 
-  addUserMessage(req.username, {
+  await addUserMessage(req.username, {
     type: 'beta_rejected',
     gameId: req.gameId,
     text: `Tu solicitud de beta tester para «${req.gameId}» no fue aceptada en esta ocasión.`
@@ -722,11 +963,9 @@ async function handleAuth() {
     return;
   }
 
-  const users = getUsers();
   const key = (username || '').toLowerCase();
 
   // ===== ADMIN: se verifica por CORREO (3er campo) + CONTRASEÑA (2do campo) =====
-  // El nombre de usuario (1er campo) no importa
   if (email && email.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
     if (password !== ADMIN_PASSWORD) {
       err.textContent = 'Contraseña incorrecta';
@@ -738,6 +977,13 @@ async function handleAuth() {
       email: ADMIN_USERNAME,
       isAdmin: true
     };
+    // Registrar también en Firebase para que aparezca en la lista
+    await saveUser(currentUser.username, {
+      username: currentUser.username,
+      email: ADMIN_USERNAME,
+      isAdmin: true,
+      createdAt: new Date().toISOString()
+    });
     finishLogin('Bienvenido, administrador');
     return;
   }
@@ -761,7 +1007,8 @@ async function handleAuth() {
 
   // ===== USUARIOS NORMALES =====
   if (authMode === 'register') {
-    if (users[key]) {
+    const existing = await getUser(username);
+    if (existing) {
       err.textContent = 'Ese nombre de usuario ya está en uso';
       err.classList.remove('hidden');
       return;
@@ -772,12 +1019,13 @@ async function handleAuth() {
       return;
     }
 
-    users[key] = {
+    await saveUser(username, {
       username: username,
       password: password,
-      email: email || null
-    };
-    saveUsers(users);
+      email: email || null,
+      isAdmin: false,
+      createdAt: new Date().toISOString()
+    });
 
     currentUser = {
       username: username,
@@ -787,7 +1035,7 @@ async function handleAuth() {
     finishLogin('Cuenta creada. ¡Bienvenido!');
   } else {
     // Login normal
-    const user = users[key];
+    const user = await getUser(username);
     if (!user || user.password !== password) {
       err.textContent = 'Usuario o contraseña incorrectos';
       err.classList.remove('hidden');
@@ -816,8 +1064,10 @@ function finishLogin(msg) {
   if (currentGameId) renderDetail(currentGameId);
   updateMessagesBadge();
 
-  if (currentUser.isAdmin && getUnreadAdminCount() > 0) {
-    setTimeout(() => showToast('Tienes solicitudes de beta pendientes'), 900);
+  if (currentUser.isAdmin) {
+    getUnreadAdminCount().then(n => {
+      if (n > 0) setTimeout(() => showToast('Tienes solicitudes de beta pendientes'), 900);
+    });
   }
 }
 
@@ -831,6 +1081,7 @@ function updateUserUI() {
     $('#user-info').classList.add('hidden');
   }
   updateMessagesBadge();
+  updateAdminTabs();
 }
 
 function logout() {
@@ -858,39 +1109,106 @@ function restoreSession() {
   }
 
   // Usuario normal
-  const users = getUsers();
-  const user = users[session.username.toLowerCase()];
-  if (!user) return;
-
-  currentUser = {
-    username: user.username,
-    email: user.email || null,
-    isAdmin: false
-  };
-  updateUserUI();
+  getUser(session.username).then(user => {
+    if (!user) return;
+    currentUser = {
+      username: user.username,
+      email: user.email || null,
+      isAdmin: false
+    };
+    updateUserUI();
+  });
 }
 
 // ============== COMENTARIOS ==============
-function submitComment() {
+async function submitComment() {
   if (!currentUser || !currentGameId) return;
   const input = $('#comment-input');
   const text = input.value.trim();
   if (!text) return;
-  addComment(currentGameId, currentUser.username, text);
+  await addComment(currentGameId, currentUser.username, text);
   input.value = '';
-  renderComments(currentGameId);
+  await renderComments(currentGameId);
   showToast('Comentario publicado');
+}
+
+
+// ============== TABS & USUARIOS ==============
+function switchTab(tab) {
+  currentTab = tab;
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+
+  if (tab === 'users') {
+    if (!currentUser || !currentUser.isAdmin) {
+      switchTab('games');
+      return;
+    }
+    showView('users');
+    renderUsers();
+  } else {
+    showView('home');
+    renderGames();
+  }
+}
+
+async function renderUsers(filter = '') {
+  const list = $('#users-list');
+  const totalEl = $('#users-total');
+  if (!list) return;
+
+  const users = await getUsers();
+  let entries = Object.values(users);
+
+  if (filter) {
+    const q = filter.toLowerCase();
+    entries = entries.filter(u =>
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q)
+    );
+  }
+
+  totalEl.textContent = `${Object.keys(users).length} usuario${Object.keys(users).length !== 1 ? 's' : ''} registrados (en este dispositivo)`;
+
+  if (entries.length === 0) {
+    list.innerHTML = '<div class="empty-state">No hay usuarios para mostrar</div>';
+    return;
+  }
+
+  list.innerHTML = entries.map(u => `
+    <div class="user-card">
+      <div class="user-card-name">${escapeHtml(u.username)}</div>
+      <div class="user-card-meta">
+        <div><strong>Correo:</strong> ${u.email ? escapeHtml(u.email) : '<em>No indicado</em>'}</div>
+        <div><strong>Cuenta:</strong> registrada en este dispositivo</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateAdminTabs() {
+  const tabUsers = $('#tab-users');
+  if (!tabUsers) return;
+  if (currentUser && currentUser.isAdmin) {
+    tabUsers.classList.remove('hidden');
+  } else {
+    tabUsers.classList.add('hidden');
+    if (currentTab === 'users') switchTab('games');
+  }
 }
 
 // ============== INIT ==============
 async function init() {
   initTheme();
+  initFirebase();
   restoreSession();
   await loadGames();
 
   const params = new URLSearchParams(location.search);
   const gameParam = params.get('game');
-  if (gameParam && GAMES.some(g => g.id === gameParam)) {
+  if (gameParam && findItem(gameParam)) {
     goDetail(gameParam);
   } else {
     showView('home');
@@ -904,6 +1222,15 @@ async function init() {
   $('#btn-auth-submit').onclick = handleAuth;
   $('#btn-switch-mode').onclick = switchAuthMode;
   $('#btn-install').onclick = startDownload;
+
+  // Bottom tabs
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.onclick = () => switchTab(btn.dataset.tab);
+  });
+  const usersSearch = $('#users-search');
+  if (usersSearch) {
+    usersSearch.addEventListener('input', () => renderUsers(usersSearch.value.trim()));
+  }
   $('#btn-share').onclick = shareGame;
   $('#btn-comment').onclick = submitComment;
   $('#btn-messages').onclick = goMessages;
