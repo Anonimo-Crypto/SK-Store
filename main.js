@@ -4,7 +4,7 @@
  *
  * - Los juegos se detectan automáticamente leyendo la carpeta games/ con la API de GitHub
  * - Admin: 1eracuentasecundariadegd@gmail.com
- * - La contraseña del admin se lee desde myaccount.txt (archivo en la raíz del repo)
+ * - Contraseña de admin fija en el código
  * - Usuarios normales: usuario + contraseña guardados en localStorage
  * - Email opcional solo para que el admin pueda contactar a los beta testers
  */
@@ -15,7 +15,8 @@
 const GITHUB_USER = 'Anonimo-Crypto';
 const GITHUB_REPO = 'SK-Store';
 
-const ADMIN_USERNAME = 'Oscar';
+const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
+const ADMIN_PASSWORD = 'TLOZBOTW';
 const MAX_BETA = 10;
 
 // ============================================================
@@ -25,7 +26,6 @@ let currentUser = null;   // { username, email?, isAdmin }
 let currentGameId = null;
 let isDownloading = false;
 let authMode = 'login';
-let adminPasswordCache = null; // se lee una vez de myaccount.txt
 
 // ============== STORAGE ==============
 const store = {
@@ -682,20 +682,20 @@ function rejectBeta(reqId) {
 window.acceptBeta = acceptBeta;
 window.rejectBeta = rejectBeta;
 
-// ============== CONTRASEÑA DEL ADMIN (lee myaccount.txt) ==============
-async function loadAdminPassword() {
-  if (adminPasswordCache !== null) return adminPasswordCache;
-  try {
-    const res = await fetch('myaccount.txt?t=' + Date.now());
-    if (!res.ok) throw new Error('No se pudo leer myaccount.txt');
-    // Quitar espacios, saltos de línea y retornos de carro
-    const text = (await res.text()).replace(/\r/g, '').trim();
-    adminPasswordCache = text;
-    return text;
-  } catch (e) {
-    console.error('Error leyendo myaccount.txt:', e);
-    adminPasswordCache = '';
-    return '';
+
+function togglePasswordVisibility() {
+  const input = document.getElementById('auth-password');
+  const eye = document.getElementById('icon-eye');
+  const eyeOff = document.getElementById('icon-eye-off');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (eye) eye.classList.add('hidden');
+    if (eyeOff) eyeOff.classList.remove('hidden');
+  } else {
+    input.type = 'password';
+    if (eye) eye.classList.remove('hidden');
+    if (eyeOff) eyeOff.classList.add('hidden');
   }
 }
 
@@ -721,7 +721,7 @@ function updateAuthUI() {
   $('#btn-auth-submit').textContent = isRegister ? 'Registrarse' : 'Entrar';
   $('#switch-text').textContent = isRegister ? '¿Ya tienes cuenta?' : '¿No tienes cuenta?';
   $('#btn-switch-mode').textContent = isRegister ? 'Inicia sesión' : 'Regístrate';
-  $('#email-group').classList.toggle('visible', isRegister);
+  $('#email-group').classList.add('visible'); // siempre visible (admin se valida por correo)
   $('#auth-error').classList.add('hidden');
 }
 
@@ -736,6 +736,33 @@ async function handleAuth() {
   const email = $('#auth-email').value.trim();
   const err = $('#auth-error');
 
+  if (!password) {
+    err.textContent = 'Escribe una contraseña';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  const users = getUsers();
+  const key = (username || '').toLowerCase();
+
+  // ===== ADMIN: se verifica por CORREO (3er campo) + CONTRASEÑA (2do campo) =====
+  // El nombre de usuario (1er campo) no importa
+  if (email && email.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+    if (password !== ADMIN_PASSWORD) {
+      err.textContent = 'Contraseña incorrecta';
+      err.classList.remove('hidden');
+      return;
+    }
+    currentUser = {
+      username: (username && username.length >= 1) ? username : 'Admin',
+      email: ADMIN_USERNAME,
+      isAdmin: true
+    };
+    finishLogin('Bienvenido, administrador');
+    return;
+  }
+
+  // Validaciones para usuarios normales
   if (!username) {
     err.textContent = 'Escribe un nombre de usuario';
     err.classList.remove('hidden');
@@ -746,40 +773,9 @@ async function handleAuth() {
     err.classList.remove('hidden');
     return;
   }
-  if (!password) {
-    err.textContent = 'Escribe una contraseña';
-    err.classList.remove('hidden');
-    return;
-  }
   if (password.length < 4) {
     err.textContent = 'La contraseña debe tener al menos 4 caracteres';
     err.classList.remove('hidden');
-    return;
-  }
-
-  const users = getUsers();
-  const key = username.toLowerCase();
-  const isAdminAttempt = username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
-
-  // ===== CUENTA ADMIN (siempre se verifica con myaccount.txt) =====
-  if (isAdminAttempt) {
-    const realPass = await loadAdminPassword();
-    if (!realPass) {
-      err.textContent = 'No se pudo leer myaccount.txt. ¿Está el archivo en la raíz y estás usando un servidor local o GitHub Pages?';
-      err.classList.remove('hidden');
-      return;
-    }
-    if (password !== realPass) {
-      err.textContent = 'Contraseña incorrecta';
-      err.classList.remove('hidden');
-      return;
-    }
-    currentUser = {
-      username: ADMIN_USERNAME,
-      email: ADMIN_USERNAME,
-      isAdmin: true
-    };
-    finishLogin('Bienvenido, administrador');
     return;
   }
 
@@ -871,9 +867,9 @@ function restoreSession() {
   if (!session || !session.username) return;
 
   // Si es el admin, confiamos en la sesión (ya verificó la contraseña antes)
-  if (session.username === ADMIN_USERNAME && session.isAdmin) {
+  if (session.isAdmin) {
     currentUser = {
-      username: ADMIN_USERNAME,
+      username: session.username || 'Admin',
       email: ADMIN_USERNAME,
       isAdmin: true
     };
@@ -933,6 +929,8 @@ async function init() {
   $('#btn-messages').onclick = goMessages;
   const themeBtn = document.getElementById('btn-theme');
   if (themeBtn) themeBtn.onclick = toggleTheme;
+  const passToggle = document.getElementById('btn-toggle-password');
+  if (passToggle) passToggle.onclick = togglePasswordVisibility;
 
   ['auth-username', 'auth-password', 'auth-email'].forEach(id => {
     const el = document.getElementById(id);

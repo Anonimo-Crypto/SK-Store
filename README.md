@@ -25,7 +25,6 @@ Hecha en JavaScript puro y pensada para GitHub Pages.
 ├── main.js
 ├── style.css
 ├── manifest.json
-├── myaccount.txt
 ├── README.md
 └── games/
     └── NombreDelJuego/

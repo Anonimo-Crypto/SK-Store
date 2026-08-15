@@ -928,3 +928,38 @@ body {
 [data-theme="dark"] .description th {
   background: rgba(255,255,255,0.05);
 }
+
+/* Password show/hide */
+.password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrap input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.btn-toggle-pass {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.btn-toggle-pass:hover {
+  color: var(--text);
+  background: rgba(0,0,0,0.05);
+}
+
+[data-theme="dark"] .btn-toggle-pass:hover {
+  background: rgba(255,255,255,0.08);
+}
