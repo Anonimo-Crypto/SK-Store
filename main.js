@@ -59,6 +59,15 @@ function initFirebase() {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     db = firebase.firestore();
+    // En móviles/algunas redes WebChannel falla; long polling suele conectar
+    try {
+      db.settings({
+        experimentalForceLongPolling: true,
+        merge: true
+      });
+    } catch (e) {
+      console.warn('No se pudo aplicar long polling:', e.message || e);
+    }
     firebaseReady = true;
     console.log('[SK Store] Firebase conectado');
     return true;
