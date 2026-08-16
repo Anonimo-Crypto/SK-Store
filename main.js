@@ -59,8 +59,6 @@ function initFirebase() {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     db = firebase.firestore();
-    // Evitar errores offline
-    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (_) {}
     firebaseReady = true;
     console.log('[SK Store] Firebase conectado');
     return true;
@@ -94,8 +92,12 @@ const MAX_CONSOLE_LOGS = 200;
           }
           return String(a);
         }).join(' ');
-        appConsoleLogs.push({ level, msg, time: new Date().toISOString() });
-        if (appConsoleLogs.length > MAX_CONSOLE_LOGS) appConsoleLogs.shift();
+        // No llenar la consola de la app con spam interno de red de Firestore
+        const isFirestoreSpam = /WebChannelConnection|enableMultiTabIndexedDbPersistence|client is offline/i.test(msg);
+        if (!isFirestoreSpam) {
+          appConsoleLogs.push({ level, msg, time: new Date().toISOString() });
+          if (appConsoleLogs.length > MAX_CONSOLE_LOGS) appConsoleLogs.shift();
+        }
         // Si la pestaña consola está abierta, refrescar
         if (typeof currentTab !== 'undefined' && currentTab === 'console') {
           try { renderConsole(); } catch (_) {}
@@ -178,14 +180,17 @@ function getDownloadsCached(itemId) {
 async function getDownloads(itemId) {
   if (firebaseReady) {
     try {
-      const doc = await db.collection('downloads').doc(itemId).get();
+      const doc = await withTimeout(db.collection('downloads').doc(itemId).get(), 3000);
       const count = doc.exists ? (doc.data().count || 0) : 0;
       const all = store.get('downloads', {});
       all[itemId] = count;
       store.set('downloads', all);
       return count;
     } catch (e) {
-      console.warn('Firebase getDownloads:', e);
+      // Silenciar offline / timeout: se usa caché local
+      if (!(e && (e.message || '').match(/offline|timeout|unavailable/i))) {
+        console.warn('Firebase getDownloads:', e.message || e);
+      }
     }
   }
   return getDownloadsCached(itemId);
@@ -1292,6 +1297,28 @@ function renderProfile() {
   }
 }
 
+function copyConsole() {
+  const text = appConsoleLogs.map(l => {
+    const t = (l.time || '').slice(11, 19);
+    return `${t} [${l.level}] ${l.msg}`;
+  }).join('\n') || '(vacío)';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast('Consola copiada')).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); showToast('Consola copiada'); } catch (_) { showToast('No se pudo copiar'); }
+  ta.remove();
+}
+
 function renderConsole() {
   const out = $('#console-output');
   if (!out) return;
@@ -1344,6 +1371,8 @@ async function init() {
   if (btnProfIn) btnProfIn.onclick = openLoginModal;
   const btnClearCon = $('#btn-clear-console');
   if (btnClearCon) btnClearCon.onclick = () => { appConsoleLogs = []; renderConsole(); };
+  const btnCopyCon = $('#btn-copy-console');
+  if (btnCopyCon) btnCopyCon.onclick = copyConsole;
   $('#btn-share').onclick = shareGame;
   $('#btn-comment').onclick = submitComment;
   $('#btn-messages').onclick = goMessages;

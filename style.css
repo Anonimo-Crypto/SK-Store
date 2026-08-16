@@ -1171,3 +1171,9 @@ body {
 .console-line.warn .c-level { color: #d29922; }
 .console-line.error .c-level { color: #f85149; }
 .console-line.info .c-level { color: #3fb950; }
+
+.console-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
