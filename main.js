@@ -58,16 +58,14 @@ function initFirebase() {
     if (!firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
-    db = firebase.firestore();
-    // En móviles/algunas redes WebChannel falla; long polling suele conectar
+    // Solo force long polling (no combinar con autoDetect)
     try {
-      db.settings({
-        experimentalForceLongPolling: true,
-        merge: true
-      });
+      firebase.firestore().settings({ experimentalForceLongPolling: true });
+      console.log('[SK Store] Firestore: long polling activo');
     } catch (e) {
-      console.warn('No se pudo aplicar long polling:', e.message || e);
+      console.warn('Long polling no aplicado:', e.message || e);
     }
+    db = firebase.firestore();
     firebaseReady = true;
     console.log('[SK Store] Firebase conectado');
     return true;
