@@ -17,7 +17,18 @@ const GITHUB_REPO = 'SK-Store';
 
 const ADMIN_USERNAME = '1eracuentasecundariadegd@gmail.com';
 const ADMIN_PASSWORD = 'TLOZBOTW';
-const MAX_BETA = 10;
+const MAX_BETA_DEFAULT = 10;
+
+function getBetaSlots(gameId) {
+  const all = store.get('betaSlots', {});
+  return all[gameId] != null ? Number(all[gameId]) : MAX_BETA_DEFAULT;
+}
+function setBetaSlots(gameId, n) {
+  const all = store.get('betaSlots', {});
+  all[gameId] = Math.max(1, Math.min(100, Number(n) || MAX_BETA_DEFAULT));
+  store.set('betaSlots', all);
+  return all[gameId];
+}
 
 // ============================================================
 // FIREBASE - pega aquí la config de tu proyecto
@@ -82,7 +93,8 @@ let GAMES = [];      // juegos
 let APPS = [];       // apps
 let currentUser = null;   // { username, email?, isAdmin }
 let currentGameId = null;
-let currentTab = 'games'; // 'games' | 'apps' | 'users'
+let currentTab = 'games'; // 'games' | 'apps' | 'profile' | 'console'
+let selectedPlatform = 'android'; // android | ios
 let authMode = 'login';
 let appConsoleLogs = []; // mensajes capturados para la pestaña Consola
 const MAX_CONSOLE_LOGS = 200;
@@ -463,11 +475,8 @@ async function loadFolderFromGitHub(folderName) {
   const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${folderName}`;
   const res = await fetch(api);
   if (!res.ok) {
-    if (res.status === 404) return []; // carpeta vacía o inexistente
-    const errBody = await res.text().catch(() => '');
-    if (res.status === 403) {
-      throw new Error('API de GitHub limitó las peticiones. Espera un momento.');
-    }
+    if (res.status === 404) return [];
+    if (res.status === 403) throw new Error('API de GitHub limitó las peticiones. Espera un momento.');
     throw new Error('Error ' + res.status + ' al listar ' + folderName);
   }
 
@@ -481,12 +490,24 @@ async function loadFolderFromGitHub(folderName) {
     const folderRes = await fetch(folder.url);
     if (!folderRes.ok) continue;
     const files = await folderRes.json();
+
     const apk = files.find(f => f.name.toLowerCase().endsWith('.apk'));
+    const ipa = files.find(f => f.name.toLowerCase().endsWith('.ipa'));
+    if (!apk && !ipa) continue;
+
     const readme = files.find(f => f.name.toLowerCase() === 'readme.md');
     const cover = files.find(f => f.name.toLowerCase() === 'portada.png');
     const devFile = files.find(f => f.name.toLowerCase() === 'developer.txt');
+    const video = files.find(f => f.name.toLowerCase() === 'video.mp4');
 
-    if (!apk) continue;
+    // Screenshot.png, Screenshot-1.png, Screenshot-2.png...
+    const shots = files
+      .filter(f => /^screenshot(-\d+)?\.png$/i.test(f.name))
+      .sort((a, b) => {
+        const na = parseInt((a.name.match(/-(\d+)/) || [,'-1'])[1], 10);
+        const nb = parseInt((b.name.match(/-(\d+)/) || [,'-1'])[1], 10);
+        return na - nb;
+      });
 
     let name = folder.name;
     let developer = 'Desarrollador independiente';
@@ -501,7 +522,6 @@ async function loadFolderFromGitHub(folderName) {
         }
       } catch (_) {}
     }
-
     if (devFile && devFile.download_url) {
       try {
         const dRes = await fetch(devFile.download_url);
@@ -509,16 +529,23 @@ async function loadFolderFromGitHub(folderName) {
       } catch (_) {}
     }
 
+    const base = folderName + '/' + folder.name + '/';
     list.push({
       id: folder.name,
       name: name,
-      apk: apk.name,
-      size: apk.size || 0,
+      apk: apk ? apk.name : null,
+      ipa: ipa ? ipa.name : null,
+      size: (apk && apk.size) || (ipa && ipa.size) || 0,
+      sizeIpa: ipa ? (ipa.size || 0) : 0,
+      sizeApk: apk ? (apk.size || 0) : 0,
       iconLetter: name[0].toUpperCase(),
       color: COLORS[i % COLORS.length],
-      apkUrl: apk.download_url,
+      apkUrl: apk ? apk.download_url : null,
+      ipaUrl: ipa ? ipa.download_url : null,
       readmeUrl: readme ? readme.download_url : null,
       coverUrl: cover ? cover.download_url : null,
+      videoUrl: video ? (video.download_url || (base + 'Video.mp4')) : null,
+      screenshots: shots.map(s => s.download_url || (base + s.name)),
       folder: folderName,
       developer: developer
     });
@@ -555,7 +582,6 @@ function renderGames() {
   empty.classList.add('hidden');
 
   list.forEach(g => {
-    const downloads = getDownloadsCached(g.id);
     const card = document.createElement('div');
     card.className = 'game-card';
     card.onclick = () => goDetail(g.id);
@@ -563,6 +589,7 @@ function renderGames() {
     const folder = g.folder || (currentTab === 'apps' ? 'apps' : 'games');
     const coverSrc = g.coverUrl || `${folder}/${g.id}/Portada.png`;
     const iconHtml = `<img src="${coverSrc}" alt="${escapeHtml(g.name)}" onerror="this.style.display='none';this.parentElement.textContent='${g.iconLetter}'">`;
+    const platforms = [g.apk ? 'Android' : null, g.ipa ? 'iPhone' : null].filter(Boolean).join(' · ') || 'Android';
 
     card.innerHTML = `
       <div class="game-card-icon" style="background:linear-gradient(135deg,${g.color}22,${g.color}55);color:${g.color}">
@@ -570,16 +597,10 @@ function renderGames() {
       </div>
       <div class="game-card-body">
         <div class="game-card-title">${escapeHtml(g.name)}</div>
-        <div class="game-card-meta" data-dl-id="${g.id}">${downloads} descarga${downloads !== 1 ? 's' : ''}</div>
+        <div class="game-card-meta">${platforms}</div>
       </div>
     `;
     grid.appendChild(card);
-
-    // Actualizar contador global en segundo plano
-    getDownloads(g.id).then(n => {
-      const el = card.querySelector(`[data-dl-id="${g.id}"]`);
-      if (el) el.textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
-    });
   });
 }
 
@@ -594,14 +615,8 @@ function showView(name) {
 function goHome() {
   currentGameId = null;
   history.replaceState(null, '', location.pathname);
-  if (currentTab === 'users' && currentUser && currentUser.isAdmin) {
-    showView('users');
-    renderUsers();
-  } else {
-    if (currentTab === 'users') currentTab = 'games';
-    showView('home');
-    renderGames();
-  }
+  showView('home');
+  renderGames();
 }
 
 function goDetail(gameId) {
@@ -632,19 +647,56 @@ async function renderDetail(gameId) {
   detailIcon.innerHTML = `<img src="${coverSrc}" alt="${escapeHtml(game.name)}" onerror="this.remove();this.parentElement.textContent='${game.iconLetter}'">`;
   detailIcon.style.background = `linear-gradient(135deg,${game.color}22,${game.color}55)`;
   detailIcon.style.color = game.color;
-  const cachedDl = getDownloadsCached(gameId);
-  $('#detail-downloads').textContent = `${cachedDl} descarga${cachedDl !== 1 ? 's' : ''}`;
-  getDownloads(gameId).then(n => {
-    $('#detail-downloads').textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
-  });
+
   const devEl = $('#detail-developer');
   if (devEl) devEl.textContent = game.developer || '—';
-  $('#detail-size').textContent = formatSize(game.size);
+
+  // Plataforma
+  selectedPlatform = game.apk ? 'android' : (game.ipa ? 'ios' : 'android');
+  const btnAnd = $('#btn-platform-android');
+  const btnIos = $('#btn-platform-ios');
+  if (btnAnd) {
+    btnAnd.disabled = !game.apk;
+    btnAnd.onclick = () => setPlatform('android', game);
+  }
+  if (btnIos) {
+    btnIos.disabled = !game.ipa;
+    btnIos.onclick = () => setPlatform('ios', game);
+  }
+  updatePlatformUI(game);
+
+  $('#btn-install').disabled = false;
+  $('#btn-install').textContent = 'Descargar';
+
+  // Video + capturas
+  const videoWrap = $('#detail-video-wrap');
+  const shotsRow = $('#detail-screenshots');
+  if (videoWrap) {
+    const vUrl = game.videoUrl || `${game.folder || 'games'}/${game.id}/Video.mp4`;
+    if (game.videoUrl) {
+      videoWrap.classList.remove('hidden');
+      videoWrap.innerHTML = `<video controls playsinline preload="metadata" src="${vUrl}"></video>`;
+    } else {
+      // probar ruta local por si existe
+      videoWrap.innerHTML = `<video controls playsinline preload="metadata" src="${vUrl}" onerror="this.parentElement.classList.add('hidden')"></video>`;
+      videoWrap.classList.add('hidden');
+    }
+  }
+  if (shotsRow) {
+    let shots = game.screenshots || [];
+    if (!shots.length) {
+      // rutas por defecto
+      const base = `${game.folder || 'games'}/${game.id}/`;
+      shots = [base + 'Screenshot.png', base + 'Screenshot-1.png', base + 'Screenshot-2.png'];
+    }
+    shotsRow.innerHTML = shots.map(src =>
+      `<img src="${src}" alt="Captura" loading="lazy" onerror="this.remove()">`
+    ).join('');
+  }
 
   // Descripción
   const descEl = $('#detail-description');
   descEl.innerHTML = '<em>Cargando descripción...</em>';
-
   const readmeUrl = game.readmeUrl || `${game.folder || 'games'}/${game.id}/README.md`;
   try {
     const res = await fetch(readmeUrl);
@@ -662,54 +714,60 @@ async function renderDetail(gameId) {
     descEl.textContent = 'Sin descripción disponible.';
   }
 
-  // Reset progreso
-  $('#download-progress').classList.add('hidden');
-  $('#progress-fill').style.width = '0%';
-  $('#progress-text').textContent = '0%';
-  $('#btn-install').disabled = false;
-  $('#btn-install').textContent = 'Descargar';
-
   // Beta
-  const accepted = await getAcceptedBetas(gameId);
-  $('#beta-count').textContent = `${accepted.length}/${MAX_BETA}`;
+  const slots = getBetaSlots(gameId);
+  $('#beta-count').textContent = `${slots} puestos`;
+
+  const adminSlots = $('#beta-admin-slots');
+  if (adminSlots) {
+    if (currentUser && currentUser.isAdmin) {
+      adminSlots.classList.remove('hidden');
+      const inp = $('#beta-slots-input');
+      if (inp) inp.value = slots;
+      const saveBtn = $('#btn-save-beta-slots');
+      if (saveBtn) {
+        saveBtn.onclick = () => {
+          const n = setBetaSlots(gameId, $('#beta-slots-input').value);
+          $('#beta-count').textContent = `${n} puestos`;
+          showToast('Puestos beta guardados');
+        };
+      }
+    } else {
+      adminSlots.classList.add('hidden');
+    }
+  }
 
   const betaBtn = $('#btn-beta-request');
   const betaStatus = $('#beta-status');
-  betaStatus.classList.add('hidden');
-  betaBtn.classList.remove('hidden');
-  betaBtn.disabled = false;
-
-  if (!currentUser) {
-    betaBtn.textContent = 'Inicia sesión para solicitar';
-    betaBtn.onclick = openLoginModal;
-  } else {
-    const allReqs = await getBetaRequests();
-    const myReq = allReqs.find(
-      r => r.gameId === gameId && r.username.toLowerCase() === currentUser.username.toLowerCase()
-    );
-    if (myReq) {
-      betaBtn.classList.add('hidden');
-      betaStatus.classList.remove('hidden');
-      if (myReq.status === 'pending') betaStatus.textContent = 'Solicitud pendiente de revisión.';
-      else if (myReq.status === 'accepted') betaStatus.textContent = '¡Eres beta tester de este juego!';
-      else betaStatus.textContent = 'Tu solicitud fue rechazada.';
-    } else if (accepted.length >= MAX_BETA) {
-      betaBtn.disabled = true;
-      betaBtn.textContent = 'Cupo de beta testers lleno';
+  if (betaStatus) betaStatus.classList.add('hidden');
+  if (betaBtn) {
+    betaBtn.classList.remove('hidden');
+    betaBtn.disabled = false;
+    if (!currentUser) {
+      betaBtn.textContent = 'Inicia sesión para solicitar';
+      betaBtn.onclick = openLoginModal;
     } else {
       betaBtn.textContent = 'Solicitar ser beta tester';
       betaBtn.onclick = () => requestBeta(gameId);
     }
   }
+}
 
-  await renderComments(gameId);
-  if (currentUser) {
-    $('#comment-form').classList.remove('hidden');
-    $('#comment-login-hint').classList.add('hidden');
-  } else {
-    $('#comment-form').classList.add('hidden');
-    $('#comment-login-hint').classList.remove('hidden');
-  }
+function setPlatform(platform, game) {
+  if (platform === 'android' && !game.apk) return;
+  if (platform === 'ios' && !game.ipa) return;
+  selectedPlatform = platform;
+  updatePlatformUI(game);
+}
+
+function updatePlatformUI(game) {
+  const btnAnd = $('#btn-platform-android');
+  const btnIos = $('#btn-platform-ios');
+  if (btnAnd) btnAnd.classList.toggle('active', selectedPlatform === 'android');
+  if (btnIos) btnIos.classList.toggle('active', selectedPlatform === 'ios');
+  const size = selectedPlatform === 'ios' ? (game.sizeIpa || game.size) : (game.sizeApk || game.size);
+  const sizeEl = $('#detail-size');
+  if (sizeEl) sizeEl.textContent = formatSize(size);
 }
 
 async function renderComments(gameId) {
@@ -736,43 +794,40 @@ function startDownload() {
   const game = findItem(currentGameId);
   if (!game) return;
 
-  const btn = $('#btn-install');
-  const progressWrap = $('#download-progress');
-  const fill = $('#progress-fill');
-  const text = $('#progress-text');
+  const isIos = selectedPlatform === 'ios';
+  if (isIos && !game.ipa) {
+    showToast('No hay versión iPhone disponible');
+    return;
+  }
+  if (!isIos && !game.apk) {
+    showToast('No hay versión Android disponible');
+    return;
+  }
 
-  // Ruta relativa (mismo origen en GitHub Pages) → el navegador muestra su diálogo nativo
-  // Si falla (pruebas locales raras), se usa la URL raw de GitHub como respaldo
   const folder = game.folder || 'games';
-  const url = `${folder}/${game.id}/${game.apk}`;
+  const fileName = isIos ? game.ipa : game.apk;
+  const url = `${folder}/${game.id}/${fileName}`;
 
-  // Descarga nativa del navegador (como cualquier página normal)
-  // Esto muestra el diálogo del navegador y la barra de descarga del sistema
   const a = document.createElement('a');
   a.href = url;
-  a.download = game.apk; // sugiere el nombre del archivo
+  a.download = fileName;
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
 
-  // Contar descarga (global)
-  btn.textContent = 'Iniciando...';
-  btn.disabled = true;
-  incDownloads(game.id).then(n => {
-    $('#detail-downloads').textContent = `${n} descarga${n !== 1 ? 's' : ''}`;
-  });
-
+  const btn = $('#btn-install');
+  if (btn) {
+    btn.textContent = 'Descarga iniciada';
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = 'Descargar de nuevo';
+    }, 1500);
+  }
   showToast('Si el navegador lo pide, acepta la descarga');
-
-  // No mostramos barra falsa: el progreso real lo lleva el navegador
-  progressWrap.classList.add('hidden');
-
-  setTimeout(() => {
-    btn.disabled = false;
-    btn.textContent = 'Descargar de nuevo';
-  }, 1500);
 }
+
 
 // ============== COMPARTIR ==============
 function shareGame() {
@@ -794,53 +849,21 @@ function copyShare(url) {
 // ============== BETA ==============
 async function requestBeta(gameId) {
   if (!currentUser) { openLoginModal(); return; }
-
-  const accepted = await getAcceptedBetas(gameId);
-  if (accepted.length >= MAX_BETA) {
-    showToast('Cupo de beta testers lleno');
-    return;
-  }
-  const allReqs = await getBetaRequests();
-  const exists = allReqs.find(
-    r => r.gameId === gameId && r.username.toLowerCase() === currentUser.username.toLowerCase()
+  const game = findItem(gameId);
+  const slots = getBetaSlots(gameId);
+  const name = game ? game.name : gameId;
+  const subject = encodeURIComponent(`Beta tester – ${name}`);
+  const body = encodeURIComponent(
+    `Hola,\n\nQuiero ser beta tester de «${name}».\n\nUsuario en SK Store: ${currentUser.username}\nCorreo: ${currentUser.email || '(no indicado)'}\n\n¡Gracias!`
   );
-  if (exists) {
-    showToast('Ya tienes una solicitud para este juego');
-    return;
-  }
-
-  await saveBetaRequest({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    gameId,
-    username: currentUser.username,
-    email: currentUser.email || null,
-    status: 'pending',
-    date: new Date().toISOString()
-  });
-
-  showToast('Solicitud enviada. El desarrollador la revisará.');
-  renderDetail(gameId);
-  updateMessagesBadge();
+  window.location.href = `mailto:${ADMIN_USERNAME}?subject=${subject}&body=${body}`;
+  showToast('Se abrirá tu correo para escribir al desarrollador');
 }
+
 
 // ============== MENSAJES (SOLO ADMIN) ==============
 async function updateMessagesBadge() {
-  const btn = $('#btn-messages');
-  const badge = $('#msg-badge');
-
-  if (currentUser && currentUser.isAdmin) {
-    btn.classList.remove('hidden');
-    const count = await getUnreadAdminCount();
-    if (count > 0) {
-      badge.textContent = count > 9 ? '9+' : count;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-  } else {
-    btn.classList.add('hidden');
-    badge.classList.add('hidden');
-  }
+  // Bandeja de mensajes eliminada de la UI
 }
 
 async function renderMessages() {
@@ -894,7 +917,7 @@ async function acceptBeta(reqId) {
   if (!req) return;
 
   const accepted = await getAcceptedBetas(req.gameId);
-  if (accepted.length >= MAX_BETA) {
+  if (accepted.length >= MAX_BETA_DEFAULT) {
     showToast('Ya hay 10 beta testers en este juego');
     return;
   }
@@ -1209,11 +1232,7 @@ function switchTab(tab) {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
 
-  if (tab === 'users') {
-    if (!currentUser || !currentUser.isAdmin) { switchTab('games'); return; }
-    showView('users');
-    renderUsers();
-  } else if (tab === 'console') {
+  if (tab === 'console') {
     if (!currentUser || !currentUser.isAdmin) { switchTab('games'); return; }
     showView('console');
     renderConsole();
@@ -1269,14 +1288,10 @@ async function renderUsers(filter = '') {
 }
 
 function updateAdminTabs() {
-  const tabUsers = $('#tab-users');
   const tabConsole = $('#tab-console');
   const isAdmin = currentUser && currentUser.isAdmin;
-  if (tabUsers) tabUsers.classList.toggle('hidden', !isAdmin);
   if (tabConsole) tabConsole.classList.toggle('hidden', !isAdmin);
-  if (!isAdmin && (currentTab === 'users' || currentTab === 'console')) {
-    switchTab('games');
-  }
+  if (!isAdmin && currentTab === 'console') switchTab('games');
 }
 
 function renderProfile() {
@@ -1381,8 +1396,7 @@ async function init() {
   const btnCopyCon = $('#btn-copy-console');
   if (btnCopyCon) btnCopyCon.onclick = copyConsole;
   $('#btn-share').onclick = shareGame;
-  $('#btn-comment').onclick = submitComment;
-  $('#btn-messages').onclick = goMessages;
+  // comentarios y mensajes eliminados de la UI
   const themeBtn = document.getElementById('btn-theme');
   if (themeBtn) themeBtn.onclick = toggleTheme;
   const passToggle = document.getElementById('btn-toggle-password');

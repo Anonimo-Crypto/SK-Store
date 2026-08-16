@@ -1177,3 +1177,98 @@ body {
   gap: 12px;
   align-items: center;
 }
+
+
+/* Platform picker */
+.platform-picker {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.platform-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.platform-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.platform-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Screenshots / video Play Store style */
+.screenshots-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.screenshots-row img {
+  height: 220px;
+  width: auto;
+  max-width: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.detail-video-wrap {
+  margin-bottom: 12px;
+}
+
+.detail-video-wrap video {
+  width: 100%;
+  max-height: 280px;
+  border-radius: 12px;
+  background: #000;
+}
+
+.beta-admin-slots {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.beta-admin-slots label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+
+.beta-slots-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.beta-slots-row input {
+  width: 80px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
